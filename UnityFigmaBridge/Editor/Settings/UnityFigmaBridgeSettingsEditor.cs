@@ -53,6 +53,15 @@ namespace UnityFigmaBridge.Editor.Settings
                     AssetDatabase.SaveAssetIfDirty(targetSettingsObject);
                 }
             }
+
+            EditorGUILayout.Space(10);
+            EditorGUILayout.LabelField("Import Controls", EditorStyles.boldLabel);
+            
+            if (GUILayout.Button("Import This Document", GUILayout.Height(30)))
+            {
+                // Trigger the import process with this specific settings object
+                UnityFigmaBridgeImporter.SyncAsync(targetSettingsObject);
+            }
         }
 
 

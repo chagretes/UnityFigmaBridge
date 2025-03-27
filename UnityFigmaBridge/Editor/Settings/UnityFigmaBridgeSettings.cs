@@ -3,6 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityFigmaBridge.Editor.FigmaApi;
+#if UNITY_EDITOR
+using UnityEditor;
+using UnityFigmaBridge.Editor;
+#endif
 
 namespace UnityFigmaBridge.Editor.Settings
 {

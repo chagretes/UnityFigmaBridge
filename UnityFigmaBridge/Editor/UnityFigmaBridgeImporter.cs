@@ -65,22 +65,45 @@ namespace UnityFigmaBridge.Editor
             SyncAsync();
         }
         
-        private static async void SyncAsync()
+        /// <summary>
+        /// Start the sync process using the current settings
+        /// </summary>
+        public static async void SyncAsync()
         {
+            // Find the settings asset if it exists
+            if (s_UnityFigmaBridgeSettings == null)
+                s_UnityFigmaBridgeSettings = UnityFigmaBridgeSettingsProvider.FindUnityBridgeSettingsAsset();
+                
+            SyncAsync(s_UnityFigmaBridgeSettings);
+        }
+        
+        /// <summary>
+        /// Start the sync process using the provided settings
+        /// </summary>
+        public static async void SyncAsync(UnityFigmaBridgeSettings settings)
+        {
+            if (settings == null)
+            {
+                Debug.LogError("No settings provided for Figma import");
+                return;
+            }
+;
+            s_UnityFigmaBridgeSettings = settings;
+            
             var requirementsMet = CheckRequirements();
             if (!requirementsMet) return;
 
-            var figmaFile = await DownloadFigmaDocument(s_UnityFigmaBridgeSettings.FileId);
+            var figmaFile = await DownloadFigmaDocument(settings.FileId);
             if (figmaFile == null) return;
 
             var pageNodeList = FigmaDataUtils.GetPageNodes(figmaFile);
 
-            if (s_UnityFigmaBridgeSettings.OnlyImportSelectedPages)
+            if (settings.OnlyImportSelectedPages)
             {
                 var downloadPageNodeIdList = pageNodeList.Select(p => p.id).ToList();
                 downloadPageNodeIdList.Sort();
 
-                var settingsPageDataIdList = s_UnityFigmaBridgeSettings.PageDataList.Select(p => p.NodeId).ToList();
+                var settingsPageDataIdList = settings.PageDataList.Select(p => p.NodeId).ToList();
                 settingsPageDataIdList.Sort();
 
                 if (!settingsPageDataIdList.SequenceEqual(downloadPageNodeIdList))
@@ -88,16 +111,16 @@ namespace UnityFigmaBridge.Editor
                     ReportError("The pages found in the Figma document have changed - check your settings file and Sync again when ready", "");
                     
                     // Apply the new page list to serialized data and select to allow the user to change
-                    s_UnityFigmaBridgeSettings.RefreshForUpdatedPages(figmaFile);
-                    Selection.activeObject = s_UnityFigmaBridgeSettings;
-                    EditorUtility.SetDirty(s_UnityFigmaBridgeSettings);
-                    AssetDatabase.SaveAssetIfDirty(s_UnityFigmaBridgeSettings);
+                    settings.RefreshForUpdatedPages(figmaFile);
+                    Selection.activeObject = settings;
+                    EditorUtility.SetDirty(settings);
+                    AssetDatabase.SaveAssetIfDirty(settings);
                     AssetDatabase.Refresh();
                     
                     return;
                 }
                 
-                var enabledPageIdList = s_UnityFigmaBridgeSettings.PageDataList.Where(p => p.Selected).Select(p => p.NodeId).ToList();
+                var enabledPageIdList = settings.PageDataList.Where(p => p.Selected).Select(p => p.NodeId).ToList();
 
                 if (enabledPageIdList.Count <= 0)
                 {
@@ -109,8 +132,7 @@ namespace UnityFigmaBridge.Editor
                 pageNodeList = pageNodeList.Where(p => enabledPageIdList.Contains(p.id)).ToList();
             }
 
-            await ImportDocument(s_UnityFigmaBridgeSettings.FileId, figmaFile, pageNodeList);
-            
+            await ImportDocument(settings.FileId, figmaFile, pageNodeList);
         }
 
         /// <summary>
@@ -489,6 +511,7 @@ namespace UnityFigmaBridge.Editor
 
                 if (screenController.TransitionEffect == null)
                 {
+                    return; // remove after, during local development I dont care about TransitionEffect
                     // Instantiate and apply the default transition effect (loaded from package assets folder)
                     var defaultTransitionAnimationEffect = AssetDatabase.LoadAssetAtPath("Packages/com.simonoliver.unityfigma/UnityFigmaBridge/Assets/TransitionFadeToBlack.prefab", typeof(GameObject)) as GameObject;
                     var transitionObject = (GameObject) PrefabUtility.InstantiatePrefab(defaultTransitionAnimationEffect,
