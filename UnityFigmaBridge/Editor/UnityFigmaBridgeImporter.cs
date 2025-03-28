@@ -343,6 +343,8 @@ namespace UnityFigmaBridge.Editor
 
         private static async Task ImportDocument(string fileId, FigmaFile figmaFile, List<Node> downloadPageNodeList)
         {
+            // Initialize paths with domain from settings
+            FigmaPaths.InitializeWithSettings(s_UnityFigmaBridgeSettings);
 
             // Build a list of page IDs to download
             var downloadPageIdList = downloadPageNodeList.Select(p => p.id).ToList();

@@ -62,6 +62,13 @@ namespace UnityFigmaBridge.Editor.Settings
                 // Trigger the import process with this specific settings object
                 UnityFigmaBridgeImporter.SyncAsync(targetSettingsObject);
             }
+            
+            EditorGUILayout.Space(5);
+            if (GUILayout.Button("Clean Up Progress Display", GUILayout.Height(25)))
+            {
+                // Clear any stuck progress bars
+                EditorUtility.ClearProgressBar();
+            }
         }
 
 

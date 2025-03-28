@@ -16,6 +16,9 @@ namespace UnityFigmaBridge.Editor.Settings
         [Tooltip("The FIGMA Document URL to import")]
         public string DocumentUrl;
         
+        [Tooltip("Optional domain name to organize assets (creates Assets/Figma/domainName)")]
+        public string Domain = "";
+        
         [Tooltip("Generate logic and linking of screens based on FIGMA's 'Prototype' settings")]
         public bool BuildPrototypeFlow=true;
         
