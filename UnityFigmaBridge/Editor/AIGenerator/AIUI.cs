@@ -21,6 +21,7 @@ public class BedrockUIGenerator : EditorWindow
     private string _awsAccessKey = "";
     private string _awsSecretKey = "";
     private string _awsRegion = "us-east-1";
+    private string _uiName = "UI"; // Novo campo para o nome dos arquivos
 
     [MenuItem("Window/AWS Bedrock/UI Generator")]
     public static void ShowWindow()
@@ -35,6 +36,7 @@ public class BedrockUIGenerator : EditorWindow
         _awsSecretKey = EditorPrefs.GetString("BedrockUIGenerator_SecretKey", "");
         _awsRegion = EditorPrefs.GetString("BedrockUIGenerator_Region", "us-east-1");
         _modelId = EditorPrefs.GetString("BedrockUIGenerator_ModelId", "anthropic.claude-v2");
+        _uiName = EditorPrefs.GetString("BedrockUIGenerator_UIName", "UI"); // Carregar nome salvo
     }
 
     private void OnGUI()
@@ -82,6 +84,14 @@ public class BedrockUIGenerator : EditorWindow
         // Prompt para gerar UI
         EditorGUILayout.LabelField("Prompt para UI", EditorStyles.boldLabel);
         _prompt = EditorGUILayout.TextArea(_prompt, GUILayout.Height(100));
+        
+        // Campo para o nome da UI
+        EditorGUILayout.LabelField("Nome da UI", EditorStyles.boldLabel);
+        _uiName = EditorGUILayout.TextField("Nome", _uiName);
+        if (string.IsNullOrWhiteSpace(_uiName))
+        {
+            _uiName = "UI"; // Valor padrão se estiver vazio
+        }
         
         EditorGUILayout.Space();
         
@@ -219,11 +229,14 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
                 Directory.CreateDirectory(scriptsPath);
             }
             
+            // Usar o nome fornecido ou o padrão "UI"
+            string fileName = string.IsNullOrWhiteSpace(_uiName) ? "UI" : _uiName;
+            
             // Extract UXML content
             string uxmlContent = ExtractContent("<UXML>", "</UXML>");
             if (!string.IsNullOrEmpty(uxmlContent))
             {
-                string uxmlFileName = EditorUtility.SaveFilePanel("Save UXML File", resourcesPath, "UILayout", "uxml");
+                string uxmlFileName = EditorUtility.SaveFilePanel("Save UXML File", resourcesPath, fileName + "Layout", "uxml");
                 if (!string.IsNullOrEmpty(uxmlFileName))
                 {
                     File.WriteAllText(uxmlFileName, uxmlContent);
@@ -234,7 +247,7 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             string ussContent = ExtractContent("<CSS>", "</CSS>");
             if (!string.IsNullOrEmpty(ussContent))
             {
-                string ussFileName = EditorUtility.SaveFilePanel("Save USS File", resourcesPath, "UIStyles", "uss");
+                string ussFileName = EditorUtility.SaveFilePanel("Save USS File", resourcesPath, fileName + "Styles", "uss");
                 if (!string.IsNullOrEmpty(ussFileName))
                 {
                     File.WriteAllText(ussFileName, ussContent);
@@ -245,12 +258,15 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             string csharpContent = ExtractContent("<C#>", "</C#>");
             if (!string.IsNullOrEmpty(csharpContent))
             {
-                string csharpFileName = EditorUtility.SaveFilePanel("Save C# Script", scriptsPath, "UIController", "cs");
+                string csharpFileName = EditorUtility.SaveFilePanel("Save C# Script", scriptsPath, fileName + "Controller", "cs");
                 if (!string.IsNullOrEmpty(csharpFileName))
                 {
                     File.WriteAllText(csharpFileName, csharpContent);
                 }
             }
+            
+            // Salvar o nome da UI nas preferências
+            EditorPrefs.SetString("BedrockUIGenerator_UIName", _uiName);
             
             AssetDatabase.Refresh();
             EditorUtility.DisplayDialog("Success", "Files saved successfully!", "OK");
