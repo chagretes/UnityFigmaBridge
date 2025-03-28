@@ -407,11 +407,6 @@ namespace UnityFigmaBridge.Editor
             // Some of the nodes, we'll want to identify to use Figma server side rendering (eg vector shapes, SVGs)
             var serverRenderNodes = FigmaDataUtils.FindAllServerRenderNodesInFile(figmaFile, externalComponentList, downloadPageIdList);
             
-            // If incremental update, filter to only nodes that have changed
-            if (incrementalUpdate && previousFigmaFile != null)
-            {
-                serverRenderNodes = FilterChangedNodes(serverRenderNodes, previousFigmaFile);
-            }
             
             // Request a render of these nodes on the server if required
             var serverRenderData = new List<FigmaServerRenderData>();
