@@ -59,6 +59,11 @@ namespace UnityFigmaBridge.Editor
         /// </summary>
         private static PrototypeFlowController s_PrototypeFlowController;
 
+        /// <summary>
+        /// The path where we save the cached Figma document JSON
+        /// </summary>
+        private const string FIGMA_DOCUMENT_CACHE_PATH = "Assets/FigmaCache";
+
         [MenuItem("Figma Bridge/Sync Document")]
         static void Sync()
         {
@@ -78,16 +83,16 @@ namespace UnityFigmaBridge.Editor
         }
         
         /// <summary>
-        /// Start the sync process using the provided settings
+        /// Start the sync process using the provided settings, with option for incremental update
         /// </summary>
-        public static async void SyncAsync(UnityFigmaBridgeSettings settings)
+        public static async void SyncAsync(UnityFigmaBridgeSettings settings, bool incrementalUpdate = false)
         {
             if (settings == null)
             {
                 Debug.LogError("No settings provided for Figma import");
                 return;
             }
-;
+            
             s_UnityFigmaBridgeSettings = settings;
             
             var requirementsMet = CheckRequirements();
@@ -95,6 +100,21 @@ namespace UnityFigmaBridge.Editor
 
             var figmaFile = await DownloadFigmaDocument(settings.FileId);
             if (figmaFile == null) return;
+
+            // If incremental update, load the previous version for comparison
+            FigmaFile previousFigmaFile = null;
+            if (incrementalUpdate)
+            {
+                previousFigmaFile = LoadCachedFigmaDocument(settings.FileId);
+                if (previousFigmaFile == null)
+                {
+                    Debug.LogWarning("No cached Figma document found. Performing full sync instead of incremental update.");
+                    incrementalUpdate = false;
+                }
+            }
+
+            // Save the current document for future incremental updates
+            SaveFigmaDocument(settings.FileId, figmaFile);
 
             var pageNodeList = FigmaDataUtils.GetPageNodes(figmaFile);
 
@@ -132,7 +152,7 @@ namespace UnityFigmaBridge.Editor
                 pageNodeList = pageNodeList.Where(p => enabledPageIdList.Contains(p.id)).ToList();
             }
 
-            await ImportDocument(settings.FileId, figmaFile, pageNodeList);
+            await ImportDocument(settings.FileId, figmaFile, pageNodeList, incrementalUpdate, previousFigmaFile);
         }
 
         /// <summary>
@@ -341,7 +361,8 @@ namespace UnityFigmaBridge.Editor
             return null;
         }
 
-        private static async Task ImportDocument(string fileId, FigmaFile figmaFile, List<Node> downloadPageNodeList)
+        private static async Task ImportDocument(string fileId, FigmaFile figmaFile, List<Node> downloadPageNodeList, 
+            bool incrementalUpdate = false, FigmaFile previousFigmaFile = null)
         {
             // Initialize paths with domain from settings
             FigmaPaths.InitializeWithSettings(s_UnityFigmaBridgeSettings);
@@ -384,11 +405,16 @@ namespace UnityFigmaBridge.Editor
             //FigmaFileUtils.ReplaceMissingComponents(figmaFile,externalComponentList);
             
             // Some of the nodes, we'll want to identify to use Figma server side rendering (eg vector shapes, SVGs)
-            // First up create a list of nodes we'll substitute with rendered images
-            var serverRenderNodes = FigmaDataUtils.FindAllServerRenderNodesInFile(figmaFile,externalComponentList,downloadPageIdList);
+            var serverRenderNodes = FigmaDataUtils.FindAllServerRenderNodesInFile(figmaFile, externalComponentList, downloadPageIdList);
+            
+            // If incremental update, filter to only nodes that have changed
+            if (incrementalUpdate && previousFigmaFile != null)
+            {
+                serverRenderNodes = FilterChangedNodes(serverRenderNodes, previousFigmaFile);
+            }
             
             // Request a render of these nodes on the server if required
-            var serverRenderData=new List<FigmaServerRenderData>();
+            var serverRenderData = new List<FigmaServerRenderData>();
             if (serverRenderNodes.Count > 0)
             {
                 var allNodeIds = serverRenderNodes.Select(serverRenderNode => serverRenderNode.SourceNode.id).ToList();
@@ -435,13 +461,13 @@ namespace UnityFigmaBridge.Editor
             catch (Exception e)
             {
                 EditorUtility.ClearProgressBar();
-                ReportError("Error downloading Figma Image Fill Data",e.ToString());
+                ReportError("Error downloading Figma Image Fill Data", e.ToString());
                 return;
             }
             
             // Generate a list of all items that need to be downloaded
             var downloadList =
-                FigmaApiUtils.GenerateDownloadQueue(activeFigmaImageFillData,foundImageFills, serverRenderData, serverRenderNodes);
+                FigmaApiUtils.GenerateDownloadQueue(activeFigmaImageFillData, foundImageFills, serverRenderData, serverRenderNodes);
 
             // Download all required files
             await FigmaApiUtils.DownloadFiles(downloadList, s_UnityFigmaBridgeSettings);
@@ -462,23 +488,30 @@ namespace UnityFigmaBridge.Editor
             // Stores necessary importer data needed for document generator.
             var figmaBridgeProcessData = new FigmaImportProcessData
             {
-                Settings=s_UnityFigmaBridgeSettings,
+                Settings = s_UnityFigmaBridgeSettings,
                 SourceFile = figmaFile,
+                PreviousSourceFile = previousFigmaFile,
                 ComponentData = componentData,
                 ServerRenderNodes = serverRenderNodes,
                 PrototypeFlowController = s_PrototypeFlowController,
                 FontMap = fontMap,
                 PrototypeFlowStartPoints = FigmaDataUtils.GetAllPrototypeFlowStartingPoints(figmaFile),
                 SelectedPagesForImport = downloadPageNodeList,
-                NodeLookupDictionary = FigmaDataUtils.BuildNodeLookupDictionary(figmaFile)
+                NodeLookupDictionary = FigmaDataUtils.BuildNodeLookupDictionary(figmaFile),
+                IsIncrementalUpdate = incrementalUpdate
             };
             
             
-            // Clear the existing screens on the flowScreen controller
+            // Clear the existing screens on the flowScreen controller if not incremental update
             if (s_UnityFigmaBridgeSettings.BuildPrototypeFlow)
             {
                 if (figmaBridgeProcessData.PrototypeFlowController)
-                    figmaBridgeProcessData.PrototypeFlowController.ClearFigmaScreens();
+                {
+                    if (!incrementalUpdate)
+                    {
+                        figmaBridgeProcessData.PrototypeFlowController.ClearFigmaScreens();
+                    }
+                }
             }
             else
             {
@@ -561,6 +594,170 @@ namespace UnityFigmaBridge.Editor
                 // Destroy temporary canvas
                 Object.DestroyImmediate(s_SceneCanvas.gameObject);
             }
+        }
+
+        /// <summary>
+        /// Saves the Figma document to a cache file
+        /// </summary>
+        private static void SaveFigmaDocument(string fileId, FigmaFile figmaFile)
+        {
+            try
+            {
+                // Ensure the cache directory exists
+                if (!Directory.Exists(FIGMA_DOCUMENT_CACHE_PATH))
+                {
+                    Directory.CreateDirectory(FIGMA_DOCUMENT_CACHE_PATH);
+                }
+
+                string filePath = Path.Combine(FIGMA_DOCUMENT_CACHE_PATH, $"{fileId}.json");
+                string jsonContent = JsonUtility.ToJson(figmaFile, true);
+                File.WriteAllText(filePath, jsonContent);
+                
+                Debug.Log($"Figma document cached to {filePath}");
+                AssetDatabase.Refresh();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Failed to save Figma document cache: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Loads a previously cached Figma document
+        /// </summary>
+        private static FigmaFile LoadCachedFigmaDocument(string fileId)
+        {
+            try
+            {
+                string filePath = Path.Combine(FIGMA_DOCUMENT_CACHE_PATH, $"{fileId}.json");
+                if (!File.Exists(filePath))
+                {
+                    return null;
+                }
+
+                string jsonContent = File.ReadAllText(filePath);
+                return JsonUtility.FromJson<FigmaFile>(jsonContent);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Failed to load cached Figma document: {e.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Filter server render nodes to only include those that have changed since the previous version
+        /// </summary>
+        private static List<ServerRenderNodeData> FilterChangedNodes(List<ServerRenderNodeData> allNodes, FigmaFile previousFile)
+        {
+            var changedNodes = new List<ServerRenderNodeData>();
+            var previousNodeLookup = FigmaDataUtils.BuildNodeLookupDictionary(previousFile);
+            
+            foreach (var node in allNodes)
+            {
+                string nodeId = node.SourceNode.id;
+                
+                // If node didn't exist before, it's changed
+                if (!previousNodeLookup.ContainsKey(nodeId))
+                {
+                    changedNodes.Add(node);
+                    continue;
+                }
+                
+                // Compare node properties to see if it changed
+                var previousNode = previousNodeLookup[nodeId];
+                if (HasNodeChanged(node.SourceNode, previousNode))
+                {
+                    changedNodes.Add(node);
+                }
+            }
+            
+            Debug.Log($"Filtered {allNodes.Count} nodes to {changedNodes.Count} changed nodes for incremental update");
+            return changedNodes;
+        }
+
+        /// <summary>
+        /// Check if a node has changed compared to its previous version
+        /// </summary>
+        private static bool HasNodeChanged(Node currentNode, Node previousNode)
+        {
+            // Compare basic properties
+            if (currentNode.name != previousNode.name) return true;
+            if (currentNode.visible != previousNode.visible) return true;
+            if (currentNode.type != previousNode.type) return true;
+            
+            // Compare transforms
+            if (currentNode.absoluteBoundingBox.x != previousNode.absoluteBoundingBox.x) return true;
+            if (currentNode.absoluteBoundingBox.y != previousNode.absoluteBoundingBox.y) return true;
+            if (currentNode.absoluteBoundingBox.width != previousNode.absoluteBoundingBox.width) return true;
+            if (currentNode.absoluteBoundingBox.height != previousNode.absoluteBoundingBox.height) return true;
+            
+            // Compare fills
+            if (currentNode.fills?.Length != previousNode.fills?.Length) return true;
+            if (currentNode.fills != null && previousNode.fills != null)
+            {
+                for (int i = 0; i < currentNode.fills.Length; i++)
+                {
+                    if (currentNode.fills[i].type != previousNode.fills[i].type) return true;
+                    if (currentNode.fills[i].visible != previousNode.fills[i].visible) return true;
+                    if (currentNode.fills[i].opacity != previousNode.fills[i].opacity) return true;
+                    // Compare colors if fill type is SOLID
+                    if (currentNode.fills[i].type == Paint.PaintType.SOLID)
+                    {
+                        if (currentNode.fills[i].color.r != previousNode.fills[i].color.r) return true;
+                        if (currentNode.fills[i].color.g != previousNode.fills[i].color.g) return true;
+                        if (currentNode.fills[i].color.b != previousNode.fills[i].color.b) return true;
+                        if (currentNode.fills[i].color.a != previousNode.fills[i].color.a) return true;
+                    }
+                    
+                    // Compare image references if fill type is IMAGE
+                    if (currentNode.fills[i].type == Paint.PaintType.IMAGE)
+                    {
+                        if (currentNode.fills[i].imageRef != previousNode.fills[i].imageRef) return true;
+                    }
+                }
+            }
+            
+            // Compare strokes
+            if (currentNode.strokes?.Length != previousNode.strokes?.Length) return true;
+            
+            // Compare children recursively if this is a container
+            if (currentNode.children != null && previousNode.children != null)
+            {
+                if (currentNode.children.Length != previousNode.children.Length) return true;
+                
+                // We won't do deep comparison of children here as that would be expensive
+                // Instead, we'll rely on the node ID comparison in the main filter method
+            }
+            
+            // For text nodes, compare text content and style
+            if (currentNode.type == NodeType.TEXT)
+            {
+                if (currentNode.characters != previousNode.characters) return true;
+                if (currentNode.style.fontSize != previousNode.style.fontSize) return true;
+                if (currentNode.style.fontFamily != previousNode.style.fontFamily) return true;
+                if (currentNode.style.fontWeight != previousNode.style.fontWeight) return true;
+            }
+            
+            return false;
+        }
+
+        [MenuItem("Figma Bridge/Update Document")]
+        static void Update()
+        {
+            UpdateAsync();
+        }
+
+        /// <summary>
+        /// Start the incremental update process using the current settings
+        /// </summary>
+        public static async void UpdateAsync()
+        {
+            // Find the settings asset if it exists
+            if (s_UnityFigmaBridgeSettings == null)
+                s_UnityFigmaBridgeSettings = UnityFigmaBridgeSettingsProvider.FindUnityBridgeSettingsAsset();
+            
+            SyncAsync(s_UnityFigmaBridgeSettings, true);
         }
     }
 }

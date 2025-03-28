@@ -64,6 +64,13 @@ namespace UnityFigmaBridge.Editor.Settings
             }
             
             EditorGUILayout.Space(5);
+            if (GUILayout.Button("Update Document (Incremental)", GUILayout.Height(30)))
+            {
+                // Trigger the incremental update process with this specific settings object
+                UnityFigmaBridgeImporter.SyncAsync(targetSettingsObject, true);
+            }
+            
+            EditorGUILayout.Space(5);
             if (GUILayout.Button("Clean Up Progress Display", GUILayout.Height(25)))
             {
                 // Clear any stuck progress bars
