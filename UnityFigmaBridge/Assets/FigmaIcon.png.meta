@@ -172,7 +172,9 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      FigmaIcon_0: 127785324410069463
+      FigmaIcon_1: 432360413468052662
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

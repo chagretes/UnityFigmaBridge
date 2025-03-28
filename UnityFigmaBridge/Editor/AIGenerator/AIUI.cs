@@ -109,15 +109,11 @@ public class BedrockUIGenerator : EditorWindow
                 EditorUtility.DisplayDialog("Copiado", "Código copiado para a área de transferência!", "OK");
             }
             
-            if (GUILayout.Button("Salvar como .cs"))
+            if (GUILayout.Button("Salvar Código Gerado"))
             {
                 SaveGeneratedCode();
             }
             
-            if (GUILayout.Button("Criar Arquivo UXML"))
-            {
-                SaveAsUXML();
-            }
             EditorGUILayout.EndHorizontal();
         }
     }
@@ -145,6 +141,7 @@ O código gerado deve incluir:
 - Código Unity Style Sheets (USS) dentro da tag `<CSS>`.
 - O código C# necessário para manipulação da UI Toolkit.
 
+Não utilize as tags <C#>, <CSS> ou <UXML> em outras partes da resposta que não sejam as tags de início e fim.
 Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem boas práticas de organização no UI Toolkit.
 </formatting>
 
@@ -206,53 +203,75 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
 
     private void SaveGeneratedCode()
     {
-        string path = EditorUtility.SaveFilePanel("Salvar Código C#", Application.dataPath, "UIGenerator", "cs");
-        if (!string.IsNullOrEmpty(path))
-        {
-            File.WriteAllText(path, _generatedCode);
-            AssetDatabase.Refresh();
-            EditorUtility.DisplayDialog("Sucesso", "Arquivo salvo com sucesso!", "OK");
-        }
-    }
-
-    private void SaveAsUXML()
-    {
         try
         {
-            // Extrair o UXML do código gerado (assumindo que está em comentários)
-            int startIndex = _generatedCode.IndexOf("<!-- UXML");
-            int endIndex = _generatedCode.IndexOf("-->", startIndex);
+            // Create directories if they don't exist
+            string resourcesPath = Path.Combine(Application.dataPath, "Resources");
+            string scriptsPath = Path.Combine(Application.dataPath, "Scripts");
             
-            string uxmlContent;
-            
-            if (startIndex >= 0 && endIndex >= 0)
+            if (!Directory.Exists(resourcesPath))
             {
-                uxmlContent = _generatedCode.Substring(startIndex, endIndex - startIndex + 3);
-            }
-            else
-            {
-                // Se não encontrar UXML em comentário, tentar gerar um básico
-                uxmlContent = ExtractOrGenerateUXML();
+                Directory.CreateDirectory(resourcesPath);
             }
             
-            string path = EditorUtility.SaveFilePanel("Salvar UXML", Application.dataPath, "UILayout", "uxml");
-            if (!string.IsNullOrEmpty(path))
+            if (!Directory.Exists(scriptsPath))
             {
-                File.WriteAllText(path, uxmlContent);
-                
-                // Se o caminho estiver dentro do projeto, importar o asset
-                if (path.StartsWith(Application.dataPath))
+                Directory.CreateDirectory(scriptsPath);
+            }
+            
+            // Extract UXML content
+            string uxmlContent = ExtractContent("<UXML>", "</UXML>");
+            if (!string.IsNullOrEmpty(uxmlContent))
+            {
+                string uxmlFileName = EditorUtility.SaveFilePanel("Save UXML File", resourcesPath, "UILayout", "uxml");
+                if (!string.IsNullOrEmpty(uxmlFileName))
                 {
-                    AssetDatabase.Refresh();
-                    EditorUtility.DisplayDialog("Sucesso", "Arquivo UXML salvo com sucesso!", "OK");
+                    File.WriteAllText(uxmlFileName, uxmlContent);
                 }
             }
+            
+            // Extract USS/CSS content
+            string ussContent = ExtractContent("<CSS>", "</CSS>");
+            if (!string.IsNullOrEmpty(ussContent))
+            {
+                string ussFileName = EditorUtility.SaveFilePanel("Save USS File", resourcesPath, "UIStyles", "uss");
+                if (!string.IsNullOrEmpty(ussFileName))
+                {
+                    File.WriteAllText(ussFileName, ussContent);
+                }
+            }
+            
+            // Extract C# content
+            string csharpContent = ExtractContent("<C#>", "</C#>");
+            if (!string.IsNullOrEmpty(csharpContent))
+            {
+                string csharpFileName = EditorUtility.SaveFilePanel("Save C# Script", scriptsPath, "UIController", "cs");
+                if (!string.IsNullOrEmpty(csharpFileName))
+                {
+                    File.WriteAllText(csharpFileName, csharpContent);
+                }
+            }
+            
+            AssetDatabase.Refresh();
+            EditorUtility.DisplayDialog("Success", "Files saved successfully!", "OK");
         }
         catch (Exception ex)
         {
-            Debug.LogError($"Erro ao salvar UXML: {ex.Message}");
-            EditorUtility.DisplayDialog("Erro", $"Falha ao salvar UXML: {ex.Message}", "OK");
+            Debug.LogError($"Error saving generated code: {ex.Message}");
+            EditorUtility.DisplayDialog("Error", $"Failed to save files: {ex.Message}", "OK");
         }
+    }
+
+    private string ExtractContent(string startTag, string endTag)
+    {
+        int startIndex = _generatedCode.IndexOf(startTag);
+        if (startIndex < 0) return string.Empty;
+        
+        startIndex += startTag.Length;
+        int endIndex = _generatedCode.IndexOf(endTag, startIndex);
+        if (endIndex < 0) return string.Empty;
+        
+        return _generatedCode.Substring(startIndex, endIndex - startIndex).Trim();
     }
 
     private string ExtractOrGenerateUXML()
