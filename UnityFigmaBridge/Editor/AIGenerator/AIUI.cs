@@ -22,6 +22,7 @@ public class BedrockUIGenerator : EditorWindow
     private string _awsSecretKey = "";
     private string _awsRegion = "us-east-1";
     private string _uiName = "UI"; // Novo campo para o nome dos arquivos
+    private bool _autoSave = true; // Nova flag para salvar automaticamente
 
     [MenuItem("Window/AWS Bedrock/UI Generator")]
     public static void ShowWindow()
@@ -37,6 +38,7 @@ public class BedrockUIGenerator : EditorWindow
         _awsRegion = EditorPrefs.GetString("BedrockUIGenerator_Region", "us-east-1");
         _modelId = EditorPrefs.GetString("BedrockUIGenerator_ModelId", "anthropic.claude-v2");
         _uiName = EditorPrefs.GetString("BedrockUIGenerator_UIName", "UI"); // Carregar nome salvo
+        _autoSave = EditorPrefs.GetBool("BedrockUIGenerator_AutoSave", true); // Carregar configuração de auto-save
     }
 
     private void OnGUI()
@@ -92,6 +94,10 @@ public class BedrockUIGenerator : EditorWindow
         {
             _uiName = "UI"; // Valor padrão se estiver vazio
         }
+        
+        // Opção para salvar automaticamente
+        _autoSave = EditorGUILayout.Toggle("Geração Automática", _autoSave);
+        EditorPrefs.SetBool("BedrockUIGenerator_AutoSave", _autoSave);
         
         EditorGUILayout.Space();
         
@@ -196,6 +202,12 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             // Extrair o texto da resposta
             _generatedCode = response?.Output?.Message?.Content?[0]?.Text ?? "Nenhuma resposta recebida.";
             
+            // Salvar automaticamente se a opção estiver ativada
+            if (_autoSave && !string.IsNullOrEmpty(_generatedCode))
+            {
+                SaveGeneratedCode();
+            }
+            
             // Atualizar a UI
             Repaint();
         }
@@ -236,40 +248,31 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             string uxmlContent = ExtractContent("<UXML>", "</UXML>");
             if (!string.IsNullOrEmpty(uxmlContent))
             {
-                string uxmlFileName = EditorUtility.SaveFilePanel("Save UXML File", resourcesPath, fileName + "Layout", "uxml");
-                if (!string.IsNullOrEmpty(uxmlFileName))
-                {
-                    File.WriteAllText(uxmlFileName, uxmlContent);
-                }
+                string uxmlFilePath = Path.Combine(resourcesPath, fileName + "Layout.uxml");
+                File.WriteAllText(uxmlFilePath, uxmlContent);
             }
             
             // Extract USS/CSS content
             string ussContent = ExtractContent("<CSS>", "</CSS>");
             if (!string.IsNullOrEmpty(ussContent))
             {
-                string ussFileName = EditorUtility.SaveFilePanel("Save USS File", resourcesPath, fileName + "Styles", "uss");
-                if (!string.IsNullOrEmpty(ussFileName))
-                {
-                    File.WriteAllText(ussFileName, ussContent);
-                }
+                string ussFilePath = Path.Combine(resourcesPath, fileName + "Styles.uss");
+                File.WriteAllText(ussFilePath, ussContent);
             }
             
             // Extract C# content
             string csharpContent = ExtractContent("<C#>", "</C#>");
             if (!string.IsNullOrEmpty(csharpContent))
             {
-                string csharpFileName = EditorUtility.SaveFilePanel("Save C# Script", scriptsPath, fileName + "Controller", "cs");
-                if (!string.IsNullOrEmpty(csharpFileName))
-                {
-                    File.WriteAllText(csharpFileName, csharpContent);
-                }
+                string csharpFilePath = Path.Combine(scriptsPath, fileName + "Controller.cs");
+                File.WriteAllText(csharpFilePath, csharpContent);
             }
             
             // Salvar o nome da UI nas preferências
             EditorPrefs.SetString("BedrockUIGenerator_UIName", _uiName);
             
             AssetDatabase.Refresh();
-            EditorUtility.DisplayDialog("Success", "Files saved successfully!", "OK");
+            EditorUtility.DisplayDialog("Success", $"Files saved successfully in Resources and Scripts folders:\n- {fileName}Layout.uxml\n- {fileName}Styles.uss\n- {fileName}Controller.cs", "OK");
         }
         catch (Exception ex)
         {
