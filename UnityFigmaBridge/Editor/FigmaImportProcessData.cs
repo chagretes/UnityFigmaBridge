@@ -23,11 +23,6 @@ namespace UnityFigmaBridge.Editor
         public FigmaFile SourceFile;
         
         /// <summary>
-        /// The previous version of the FIGMA file (for incremental updates)
-        /// </summary>
-        public FigmaFile PreviousSourceFile;
-        
-        /// <summary>
         /// Whether this is an incremental update rather than a full sync
         /// </summary>
         public bool IsIncrementalUpdate;

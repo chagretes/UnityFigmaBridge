@@ -101,21 +101,6 @@ namespace UnityFigmaBridge.Editor
             var figmaFile = await DownloadFigmaDocument(settings.FileId);
             if (figmaFile == null) return;
 
-            // If incremental update, load the previous version for comparison
-            FigmaFile previousFigmaFile = null;
-            if (incrementalUpdate)
-            {
-                previousFigmaFile = LoadCachedFigmaDocument(settings.FileId);
-                if (previousFigmaFile == null)
-                {
-                    Debug.LogWarning("No cached Figma document found. Performing full sync instead of incremental update.");
-                    incrementalUpdate = false;
-                }
-            }
-
-            // Save the current document for future incremental updates
-            SaveFigmaDocument(settings.FileId, figmaFile);
-
             var pageNodeList = FigmaDataUtils.GetPageNodes(figmaFile);
 
             if (settings.OnlyImportSelectedPages)
@@ -152,7 +137,7 @@ namespace UnityFigmaBridge.Editor
                 pageNodeList = pageNodeList.Where(p => enabledPageIdList.Contains(p.id)).ToList();
             }
 
-            await ImportDocument(settings.FileId, figmaFile, pageNodeList, incrementalUpdate, previousFigmaFile);
+            await ImportDocument(settings.FileId, figmaFile, pageNodeList, incrementalUpdate);
         }
 
         /// <summary>
@@ -362,7 +347,7 @@ namespace UnityFigmaBridge.Editor
         }
 
         private static async Task ImportDocument(string fileId, FigmaFile figmaFile, List<Node> downloadPageNodeList, 
-            bool incrementalUpdate = false, FigmaFile previousFigmaFile = null)
+            bool incrementalUpdate = false)
         {
             // Initialize paths with domain from settings
             FigmaPaths.InitializeWithSettings(s_UnityFigmaBridgeSettings);
@@ -372,7 +357,10 @@ namespace UnityFigmaBridge.Editor
             
             // Ensure we have all required directories, and remove existing files
             // TODO - Once we move to processing only differences, we won't remove existing files
-            FigmaPaths.CreateRequiredDirectories();
+            if (!incrementalUpdate)
+            {
+                FigmaPaths.CreateRequiredDirectories();
+            }
             
             // Next build a list of all externally referenced components not included in the document (eg
             // from external libraries) and download
@@ -485,7 +473,6 @@ namespace UnityFigmaBridge.Editor
             {
                 Settings = s_UnityFigmaBridgeSettings,
                 SourceFile = figmaFile,
-                PreviousSourceFile = previousFigmaFile,
                 ComponentData = componentData,
                 ServerRenderNodes = serverRenderNodes,
                 PrototypeFlowController = s_PrototypeFlowController,
@@ -589,86 +576,6 @@ namespace UnityFigmaBridge.Editor
                 // Destroy temporary canvas
                 Object.DestroyImmediate(s_SceneCanvas.gameObject);
             }
-        }
-
-        /// <summary>
-        /// Saves the Figma document to a cache file
-        /// </summary>
-        private static void SaveFigmaDocument(string fileId, FigmaFile figmaFile)
-        {
-            try
-            {
-                // Ensure the cache directory exists
-                if (!Directory.Exists(FIGMA_DOCUMENT_CACHE_PATH))
-                {
-                    Directory.CreateDirectory(FIGMA_DOCUMENT_CACHE_PATH);
-                }
-
-                string filePath = Path.Combine(FIGMA_DOCUMENT_CACHE_PATH, $"{fileId}.json");
-                string jsonContent = JsonUtility.ToJson(figmaFile, true);
-                File.WriteAllText(filePath, jsonContent);
-                
-                Debug.Log($"Figma document cached to {filePath}");
-                AssetDatabase.Refresh();
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Failed to save Figma document cache: {e.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Loads a previously cached Figma document
-        /// </summary>
-        private static FigmaFile LoadCachedFigmaDocument(string fileId)
-        {
-            try
-            {
-                string filePath = Path.Combine(FIGMA_DOCUMENT_CACHE_PATH, $"{fileId}.json");
-                if (!File.Exists(filePath))
-                {
-                    return null;
-                }
-
-                string jsonContent = File.ReadAllText(filePath);
-                return JsonUtility.FromJson<FigmaFile>(jsonContent);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Failed to load cached Figma document: {e.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Filter server render nodes to only include those that have changed since the previous version
-        /// </summary>
-        private static List<ServerRenderNodeData> FilterChangedNodes(List<ServerRenderNodeData> allNodes, FigmaFile previousFile)
-        {
-            var changedNodes = new List<ServerRenderNodeData>();
-            var previousNodeLookup = FigmaDataUtils.BuildNodeLookupDictionary(previousFile);
-            
-            foreach (var node in allNodes)
-            {
-                string nodeId = node.SourceNode.id;
-                
-                // If node didn't exist before, it's changed
-                if (!previousNodeLookup.ContainsKey(nodeId))
-                {
-                    changedNodes.Add(node);
-                    continue;
-                }
-                
-                // Compare node properties to see if it changed
-                var previousNode = previousNodeLookup[nodeId];
-                if (HasNodeChanged(node.SourceNode, previousNode))
-                {
-                    changedNodes.Add(node);
-                }
-            }
-            
-            Debug.Log($"Filtered {allNodes.Count} nodes to {changedNodes.Count} changed nodes for incremental update");
-            return changedNodes;
         }
 
         /// <summary>
