@@ -114,9 +114,20 @@ namespace UnityFigmaBridge.Editor.Nodes
         private static GameObject BuildFigmaNode(Node figmaNode, RectTransform parentTransform,  Node parentFigmaNode,
             int nodeRecursionDepth, FigmaImportProcessData figmaImportProcessData,bool includedPageObject, bool withinComponentDefinition)
         {
-
+            GameObject nodeGameObject;
+            if (figmaImportProcessData.IsIncrementalUpdate)
+            {
+                //find the previous prefab for this node
+                var previousPrefabParent = FindPrefabByName(parentFigmaNode.name);
+                // look for the node in the previous prefabParent
+                var previousPrefab = previousPrefabParent?.transform?.Find(figmaNode.name);
+                nodeGameObject = previousPrefab.gameObject ?? new GameObject(figmaNode.name, typeof(RectTransform));
+            }
+            else 
+            {
+                nodeGameObject = new GameObject(figmaNode.name, typeof(RectTransform));
+            }
             // Create a gameObject for this figma node and parent to parent transform
-            var nodeGameObject = new GameObject(figmaNode.name, typeof(RectTransform));
             nodeGameObject.transform.SetParent(parentTransform, false);
             var nodeRectTransform = nodeGameObject.transform as RectTransform;
             
@@ -301,9 +312,6 @@ namespace UnityFigmaBridge.Editor.Nodes
         }
 
 
-
-
-
         /// <summary>
         /// Registers a figma section. This is needed for flow controller to properly transition between sections
         /// </summary>
@@ -335,6 +343,31 @@ namespace UnityFigmaBridge.Editor.Nodes
                     FigmaNodeName = node.name,
                 });
             }
+        }
+
+        /// <summary>
+        /// Finds a prefab in the project by name
+        /// </summary>
+        /// <param name="prefabName">The name of the prefab to find</param>
+        /// <returns>The prefab GameObject if found, null otherwise</returns>
+        public static GameObject FindPrefabByName(string prefabName)
+        {
+            // Search for all prefab assets in the project
+            string[] guids = AssetDatabase.FindAssets("t:Prefab");
+            
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                
+                if (prefab != null && prefab.name == prefabName)
+                {
+                    return prefab;
+                }
+            }
+            
+            // Prefab not found
+            return null;
         }
     }
 
