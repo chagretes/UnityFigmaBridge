@@ -344,10 +344,11 @@ namespace UnityFigmaBridge.Editor.Nodes
         /// <param name="nodeGameObject"></param>
         /// <param name="node"></param>
         /// <exception cref="ArgumentOutOfRangeException"></exception>
-        public static void CreateUnityComponentsForNode(GameObject nodeGameObject,Node node,FigmaImportProcessData figmaImportProcessData)
+        public static void CreateUnityComponentsForNode(GameObject nodeGameObject, Node figmaNode, 
+            FigmaImportProcessData figmaImportProcessData, bool isExistingNode = false)
         {
             // Background fills
-            switch (node.type)
+            switch (figmaNode.type)
             {
                 case NodeType.FRAME:
                 case NodeType.RECTANGLE:
@@ -355,12 +356,15 @@ namespace UnityFigmaBridge.Editor.Nodes
                 case NodeType.STAR:
                 case NodeType.COMPONENT:
                 case NodeType.INSTANCE:
-                    if (NodeIsSubstitution(node, figmaImportProcessData)) return;
+                    if (NodeIsSubstitution(figmaNode, figmaImportProcessData)) return;
                     // No longer need to add here - will be generated above as needed
                     break;
                 case NodeType.TEXT:
                     // For text nodes, we use TextMeshPro
-                    nodeGameObject.AddComponent<TextMeshProUGUI>();
+                    if (!isExistingNode || nodeGameObject.GetComponent<TextMeshProUGUI>() == null)
+                    {
+                        nodeGameObject.AddComponent<TextMeshProUGUI>();
+                    }
                     break;
                 case NodeType.DOCUMENT:
                     break;

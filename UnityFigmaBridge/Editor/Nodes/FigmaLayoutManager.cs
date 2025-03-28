@@ -18,8 +18,9 @@ namespace UnityFigmaBridge.Editor.Nodes
         /// <param name="node"></param>
         /// <param name="figmaImportProcessData"></param>
         /// <param name="scrollContentGameObject">Generated scroll content object (if generated)</param>
+        /// <param name="isExistingNode">Indicates whether the node is an existing node</param>
         public static void ApplyLayoutPropertiesForNode( GameObject nodeGameObject,Node node,
-            FigmaImportProcessData figmaImportProcessData,out GameObject scrollContentGameObject)
+            FigmaImportProcessData figmaImportProcessData,out GameObject scrollContentGameObject, bool isExistingNode = false)
         {
             
             // Depending on whether scrolling is applied, we may want to add layout to this object or to the content

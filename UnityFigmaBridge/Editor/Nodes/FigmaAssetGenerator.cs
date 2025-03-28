@@ -115,18 +115,42 @@ namespace UnityFigmaBridge.Editor.Nodes
             int nodeRecursionDepth, FigmaImportProcessData figmaImportProcessData,bool includedPageObject, bool withinComponentDefinition)
         {
             GameObject nodeGameObject;
+            bool isExistingNode = false;
+            
             if (figmaImportProcessData.IsIncrementalUpdate)
             {
-                //find the previous prefab for this node
-                var previousPrefabParent = FindPrefabByName(parentFigmaNode.name);
-                // look for the node in the previous prefabParent
-                var previousPrefab = previousPrefabParent?.transform?.Find(figmaNode.name);
-                nodeGameObject = previousPrefab.gameObject ?? new GameObject(figmaNode.name, typeof(RectTransform));
+                // Try to find existing node in the hierarchy first
+                Transform existingChild = parentTransform.Find(figmaNode.name);
+                
+                if (existingChild != null)
+                {
+                    // Reuse existing node
+                    nodeGameObject = existingChild.gameObject;
+                    isExistingNode = true;
+                }
+                else
+                {
+                    // If not found in hierarchy, try to find in prefabs
+                    var previousPrefab = FindPrefabForNode(parentFigmaNode.name, figmaNode.name);
+                    if (previousPrefab != null)
+                    {
+                        // Instantiate from prefab
+                        nodeGameObject = Object.Instantiate(previousPrefab);
+                        nodeGameObject.name = figmaNode.name; // Remove the "(Clone)" suffix
+                        isExistingNode = true;
+                    }
+                    else
+                    {
+                        // Create new if not found
+                        nodeGameObject = new GameObject(figmaNode.name, typeof(RectTransform));
+                    }
+                }
             }
             else 
             {
                 nodeGameObject = new GameObject(figmaNode.name, typeof(RectTransform));
             }
+            
             // Create a gameObject for this figma node and parent to parent transform
             nodeGameObject.transform.SetParent(parentTransform, false);
             var nodeRectTransform = nodeGameObject.transform as RectTransform;
@@ -138,13 +162,22 @@ namespace UnityFigmaBridge.Editor.Nodes
             if (matchingServerRenderEntry!=null) NodeTransformManager.ApplyAbsoluteBoundsFigmaTransform(nodeRectTransform, figmaNode, parentFigmaNode,nodeRecursionDepth >0);
             else NodeTransformManager.ApplyFigmaTransform(nodeRectTransform, figmaNode, parentFigmaNode,nodeRecursionDepth >0);
             
-            // Add on a figmaNode to store the reference to the FIGMA figmaNode id
-            nodeGameObject.AddComponent<FigmaNodeObject>().NodeId=figmaNode.id;
+            // Add on a figmaNode to store the reference to the FIGMA figmaNode id if it doesn't exist
+            var figmaNodeObject = nodeGameObject.GetComponent<FigmaNodeObject>();
+            if (figmaNodeObject == null)
+            {
+                figmaNodeObject = nodeGameObject.AddComponent<FigmaNodeObject>();
+            }
+            figmaNodeObject.NodeId = figmaNode.id;
 
             // If this is a Figma mask object we'll add a mask component (but dont render) 
             if (figmaNode.isMask)
             {
-                var mask=nodeGameObject.AddComponent<Mask>();
+                var mask = nodeGameObject.GetComponent<Mask>();
+                if (mask == null)
+                {
+                    mask = nodeGameObject.AddComponent<Mask>();
+                }
                 mask.showMaskGraphic = false;
             }
             
@@ -155,9 +188,14 @@ namespace UnityFigmaBridge.Editor.Nodes
             {
                 if (!figmaImportProcessData.ComponentData.MissingComponentDefinitionsList.Contains(figmaNode.componentId))
                 {
-                    // Attach a placeholder transform and component which will get replaced on second pass
-                   nodeGameObject.AddComponent<FigmaComponentNodeMarker>().Initialise(figmaNode.id, parentFigmaNode.id, figmaNode.componentId);
-                   return nodeGameObject;
+                    // Check if component marker already exists
+                    var componentMarker = nodeGameObject.GetComponent<FigmaComponentNodeMarker>();
+                    if (componentMarker == null)
+                    {
+                        componentMarker = nodeGameObject.AddComponent<FigmaComponentNodeMarker>();
+                    }
+                    componentMarker.Initialise(figmaNode.id, parentFigmaNode.id, figmaNode.componentId);
+                    return nodeGameObject;
                 }
                 // Otherwise we assume we are missing the definition, so just create as normal
             }
@@ -166,8 +204,13 @@ namespace UnityFigmaBridge.Editor.Nodes
             
             if (matchingServerRenderEntry!=null)
             {
-                // Attach a simple image node (no need for custom renderer)
-                nodeGameObject.AddComponent<Image>().sprite = AssetDatabase.LoadAssetAtPath<Sprite>(FigmaPaths.GetPathForServerRenderedImage(figmaNode.id,figmaImportProcessData.ServerRenderNodes));
+                // Get or add image component
+                var image = nodeGameObject.GetComponent<Image>();
+                if (image == null)
+                {
+                    image = nodeGameObject.AddComponent<Image>();
+                }
+                image.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(FigmaPaths.GetPathForServerRenderedImage(figmaNode.id,figmaImportProcessData.ServerRenderNodes));
                 
                 // This could be a button, so check for prototype functionality
                 PrototypeFlowManager.ApplyPrototypeFunctionalityToNode(figmaNode, nodeGameObject, figmaImportProcessData);
@@ -179,17 +222,18 @@ namespace UnityFigmaBridge.Editor.Nodes
                 return nodeGameObject;
             }
             
+            // Pass the isExistingNode flag to component creation methods
             // Create any required unity components for this figmaNode. We separate out application of properties to a separate method
-            FigmaNodeManager.CreateUnityComponentsForNode(nodeGameObject, figmaNode,figmaImportProcessData);
+            FigmaNodeManager.CreateUnityComponentsForNode(nodeGameObject, figmaNode, figmaImportProcessData, isExistingNode);
             
             // Apply properties for this figmaNode
-            FigmaNodeManager.ApplyUnityComponentPropertiesForNode(nodeGameObject,figmaNode,figmaImportProcessData);
+            FigmaNodeManager.ApplyUnityComponentPropertiesForNode(nodeGameObject, figmaNode, figmaImportProcessData);
             
             // Apply effects for this figmaNode (if there is an effects node. Some dont have this (eg SECTION)
-            if (figmaNode.effects!=null) EffectManager.ApplyAllFigmaEffectsToUnityNode(nodeGameObject,figmaNode,figmaImportProcessData);
+            if (figmaNode.effects!=null) EffectManager.ApplyAllFigmaEffectsToUnityNode(nodeGameObject, figmaNode, figmaImportProcessData);
             
             // Apply layout properties to this node as required (eg vertical layout groups etc). This also implements scrolling
-            FigmaLayoutManager.ApplyLayoutPropertiesForNode(nodeGameObject,figmaNode,figmaImportProcessData,out var scrollContentGameObject);
+            FigmaLayoutManager.ApplyLayoutPropertiesForNode(nodeGameObject, figmaNode, figmaImportProcessData, out var scrollContentGameObject, isExistingNode);
             
             // Build children for this node, if they exist
             if (figmaNode.children != null)
@@ -367,6 +411,51 @@ namespace UnityFigmaBridge.Editor.Nodes
             }
             
             // Prefab not found
+            return null;
+        }
+
+        /// <summary>
+        /// Finds a prefab in the project that contains a node with the specified name
+        /// </summary>
+        /// <param name="parentNodeName">The name of the parent node/prefab</param>
+        /// <param name="childNodeName">The name of the child node to find</param>
+        /// <returns>The GameObject for the child node if found, null otherwise</returns>
+        private static GameObject FindPrefabForNode(string parentNodeName, string childNodeName)
+        {
+            // First find the parent prefab
+            GameObject parentPrefab = FindPrefabByName(parentNodeName);
+            if (parentPrefab == null) return null;
+            
+            // Look for the child in the prefab
+            Transform childTransform = FindChildRecursively(parentPrefab.transform, childNodeName);
+            if (childTransform != null)
+            {
+                return childTransform.gameObject;
+            }
+            
+            return null;
+        }
+
+        /// <summary>
+        /// Recursively searches for a child with the specified name
+        /// </summary>
+        /// <param name="parent">The parent transform to search in</param>
+        /// <param name="childName">The name of the child to find</param>
+        /// <returns>The child transform if found, null otherwise</returns>
+        private static Transform FindChildRecursively(Transform parent, string childName)
+        {
+            // Check direct children first
+            Transform directChild = parent.Find(childName);
+            if (directChild != null) return directChild;
+            
+            // Check recursively
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform child = parent.GetChild(i);
+                Transform result = FindChildRecursively(child, childName);
+                if (result != null) return result;
+            }
+            
             return null;
         }
     }
