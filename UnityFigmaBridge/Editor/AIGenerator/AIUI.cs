@@ -24,6 +24,7 @@ public class BedrockUIGenerator : EditorWindow
     private string _uiName = "UI"; // Novo campo para o nome dos arquivos
     private bool _autoSave = true; // Nova flag para salvar automaticamente
     private bool _useCurrentScene = true; // Nova flag para usar UIDocument na cena atual
+    private bool _generateScript = false; // Nova flag para controlar a geração do script C#
 
     [MenuItem("Window/AWS Bedrock/UI Generator")]
     public static void ShowWindow()
@@ -41,6 +42,7 @@ public class BedrockUIGenerator : EditorWindow
         _uiName = EditorPrefs.GetString("BedrockUIGenerator_UIName", "UI"); // Carregar nome salvo
         _autoSave = EditorPrefs.GetBool("BedrockUIGenerator_AutoSave", true); // Carregar configuração de auto-save
         _useCurrentScene = EditorPrefs.GetBool("BedrockUIGenerator_UseCurrentScene", true); // Carregar configuração de uso da cena atual
+        _generateScript = EditorPrefs.GetBool("BedrockUIGenerator_GenerateScript", false); // Carregar configuração de geração de script
     }
 
     private void OnGUI()
@@ -104,6 +106,10 @@ public class BedrockUIGenerator : EditorWindow
         // Opção para usar UIDocument na cena atual
         _useCurrentScene = EditorGUILayout.Toggle("Usar UIDocument na Cena Atual", _useCurrentScene);
         EditorPrefs.SetBool("BedrockUIGenerator_UseCurrentScene", _useCurrentScene);
+        
+        // Opção para gerar script C#
+        _generateScript = EditorGUILayout.Toggle("Gerar Script C#", _generateScript);
+        EditorPrefs.SetBool("BedrockUIGenerator_GenerateScript", _generateScript);
         
         EditorGUILayout.Space();
         
@@ -274,7 +280,8 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             string csharpContent = ExtractContent("<C#>", "</C#>");
             string csharpFilePath = "";
             
-            if (!string.IsNullOrEmpty(csharpContent))
+            // Somente salvar o script C# se a opção estiver ativada
+            if (_generateScript && !string.IsNullOrEmpty(csharpContent))
             {
                 csharpFilePath = Path.Combine(scriptsPath, fileName + "Controller.cs");
                 File.WriteAllText(csharpFilePath, csharpContent);
@@ -290,11 +297,15 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             {
                 // Aguardar a compilação do script antes de tentar anexar à cena
                 EditorApplication.delayCall += () => {
-                    AttachToUIDocumentInScene(uxmlFilePath, ussFilePath, csharpFilePath, fileName);
+                    AttachToUIDocumentInScene(uxmlFilePath, ussFilePath, _generateScript ? csharpFilePath : "", fileName);
                 };
             }
             
-            EditorUtility.DisplayDialog("Success", $"Files saved successfully in Resources and Scripts folders:\n- {fileName}Layout.uxml\n- {fileName}Styles.uss\n- {fileName}Controller.cs", "OK");
+            string successMessage = $"Files saved successfully in Resources folder:\n- {fileName}Layout.uxml\n- {fileName}Styles.uss";
+            if (_generateScript)
+                successMessage += $"\n- {fileName}Controller.cs";
+            
+            EditorUtility.DisplayDialog("Success", successMessage, "OK");
         }
         catch (Exception ex)
         {
@@ -381,7 +392,7 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
                 }
                 
                 // Adicionar o script controller ao GameObject do UIDocument
-                if (!string.IsNullOrEmpty(scriptPath))
+                if (_generateScript && !string.IsNullOrEmpty(scriptPath))
                 {
                     // Esperar que o script seja compilado
                     EditorApplication.delayCall += () => {
@@ -463,12 +474,24 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
 
     private Type GetTypeByName(string className)
     {
+        // Try to find the type in all loaded assemblies
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
         {
+            // First try with exact name match
             var type = assembly.GetType(className);
             if (type != null)
                 return type;
+            
+            // If not found, try to find by searching all types in the assembly
+            foreach (var t in assembly.GetTypes())
+            {
+                // Check if the type name matches (without namespace)
+                if (t.Name == className)
+                    return t;
+            }
         }
+        
+        Debug.LogWarning($"Could not find type: {className}. Make sure the script has been compiled.");
         return null;
     }
 }
