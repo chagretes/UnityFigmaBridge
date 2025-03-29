@@ -23,6 +23,7 @@ public class BedrockUIGenerator : EditorWindow
     private string _awsRegion = "us-east-1";
     private string _uiName = "UI"; // Novo campo para o nome dos arquivos
     private bool _autoSave = true; // Nova flag para salvar automaticamente
+    private bool _useCurrentScene = true; // Nova flag para usar UIDocument na cena atual
 
     [MenuItem("Window/AWS Bedrock/UI Generator")]
     public static void ShowWindow()
@@ -39,6 +40,7 @@ public class BedrockUIGenerator : EditorWindow
         _modelId = EditorPrefs.GetString("BedrockUIGenerator_ModelId", "anthropic.claude-v2");
         _uiName = EditorPrefs.GetString("BedrockUIGenerator_UIName", "UI"); // Carregar nome salvo
         _autoSave = EditorPrefs.GetBool("BedrockUIGenerator_AutoSave", true); // Carregar configuração de auto-save
+        _useCurrentScene = EditorPrefs.GetBool("BedrockUIGenerator_UseCurrentScene", true); // Carregar configuração de uso da cena atual
     }
 
     private void OnGUI()
@@ -98,6 +100,10 @@ public class BedrockUIGenerator : EditorWindow
         // Opção para salvar automaticamente
         _autoSave = EditorGUILayout.Toggle("Geração Automática", _autoSave);
         EditorPrefs.SetBool("BedrockUIGenerator_AutoSave", _autoSave);
+        
+        // Opção para usar UIDocument na cena atual
+        _useCurrentScene = EditorGUILayout.Toggle("Usar UIDocument na Cena Atual", _useCurrentScene);
+        EditorPrefs.SetBool("BedrockUIGenerator_UseCurrentScene", _useCurrentScene);
         
         EditorGUILayout.Space();
         
@@ -246,25 +252,31 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             
             // Extract UXML content
             string uxmlContent = ExtractContent("<UXML>", "</UXML>");
+            string uxmlFilePath = "";
+            
             if (!string.IsNullOrEmpty(uxmlContent))
             {
-                string uxmlFilePath = Path.Combine(resourcesPath, fileName + "Layout.uxml");
+                uxmlFilePath = Path.Combine(resourcesPath, fileName + "Layout.uxml");
                 File.WriteAllText(uxmlFilePath, uxmlContent);
             }
             
             // Extract USS/CSS content
             string ussContent = ExtractContent("<CSS>", "</CSS>");
+            string ussFilePath = "";
+            
             if (!string.IsNullOrEmpty(ussContent))
             {
-                string ussFilePath = Path.Combine(resourcesPath, fileName + "Styles.uss");
+                ussFilePath = Path.Combine(resourcesPath, fileName + "Styles.uss");
                 File.WriteAllText(ussFilePath, ussContent);
             }
             
             // Extract C# content
             string csharpContent = ExtractContent("<C#>", "</C#>");
+            string csharpFilePath = "";
+            
             if (!string.IsNullOrEmpty(csharpContent))
             {
-                string csharpFilePath = Path.Combine(scriptsPath, fileName + "Controller.cs");
+                csharpFilePath = Path.Combine(scriptsPath, fileName + "Controller.cs");
                 File.WriteAllText(csharpFilePath, csharpContent);
             }
             
@@ -272,6 +284,16 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             EditorPrefs.SetString("BedrockUIGenerator_UIName", _uiName);
             
             AssetDatabase.Refresh();
+            
+            // Se a opção de usar a cena atual estiver ativada, procurar por UIDocument na cena
+            if (_useCurrentScene)
+            {
+                // Aguardar a compilação do script antes de tentar anexar à cena
+                EditorApplication.delayCall += () => {
+                    AttachToUIDocumentInScene(uxmlFilePath, ussFilePath, csharpFilePath, fileName);
+                };
+            }
+            
             EditorUtility.DisplayDialog("Success", $"Files saved successfully in Resources and Scripts folders:\n- {fileName}Layout.uxml\n- {fileName}Styles.uss\n- {fileName}Controller.cs", "OK");
         }
         catch (Exception ex)
@@ -323,5 +345,130 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
         uxmlBuilder.AppendLine("</UXML>");
         
         return uxmlBuilder.ToString();
+    }
+
+    [Obsolete]
+    private void AttachToUIDocumentInScene(string uxmlPath, string ussPath, string scriptPath, string fileName)
+    {
+        try
+        {
+            // Procurar por UIDocument na cena atual
+            UIDocument[] uiDocuments = FindObjectsOfType<UIDocument>();
+            
+            if (uiDocuments != null && uiDocuments.Length > 0)
+            {
+                // Carregar os assets recém-criados
+                var uxmlAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(uxmlPath.Replace(Application.dataPath, "Assets"));
+                var ussAsset = AssetDatabase.LoadAssetAtPath<StyleSheet>(ussPath.Replace(Application.dataPath, "Assets"));
+
+                // Usar o primeiro UIDocument encontrado
+                UIDocument uiDocument = uiDocuments[0];
+                
+                // Atualizar o UIDocument com o novo UXML
+                if (uxmlAsset != null)
+                {
+                    Undo.RecordObject(uiDocument, "Update UIDocument source");
+                    uiDocument.visualTreeAsset = uxmlAsset;
+                    EditorUtility.SetDirty(uiDocument);
+                }
+                
+                // Adicionar o StyleSheet se não estiver já presente
+                if (ussAsset != null)
+                {
+                    Undo.RecordObject(uiDocument, "Add StyleSheet to UIDocument");
+                    uiDocument.rootVisualElement.styleSheets.Add(ussAsset);
+                    EditorUtility.SetDirty(uiDocument);
+                }
+                
+                // Adicionar o script controller ao GameObject do UIDocument
+                if (!string.IsNullOrEmpty(scriptPath))
+                {
+                    // Esperar que o script seja compilado
+                    EditorApplication.delayCall += () => {
+                        try
+                        {
+                            // Obter o tipo do script recém-criado
+                            var controllerType = GetTypeByName(fileName + "Controller");
+                            
+                            if (controllerType != null)
+                            {
+                                // Verificar se o componente já existe
+                                if (uiDocument.GetComponent(controllerType) == null)
+                                {
+                                    // Adicionar o componente ao GameObject
+                                    Undo.AddComponent(uiDocument.gameObject, controllerType);
+                                    EditorUtility.SetDirty(uiDocument.gameObject);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"Error attaching controller script: {ex.Message}");
+                        }
+                    };
+                }
+                
+                Debug.Log($"UI attached to existing UIDocument in scene: {uiDocument.gameObject.name}");
+            }
+            else
+            {
+                // Se não encontrar UIDocument, criar um novo GameObject com UIDocument
+                EditorApplication.delayCall += () => {
+                    try
+                    {
+                        // Criar um novo GameObject
+                        GameObject uiGameObject = new GameObject(fileName + "Document");
+                        Undo.RegisterCreatedObjectUndo(uiGameObject, "Create UI GameObject");
+                        
+                        // Adicionar UIDocument
+                        var uiDocument = Undo.AddComponent<UnityEngine.UIElements.UIDocument>(uiGameObject);
+                        
+                        // Carregar os assets recém-criados
+                        var uxmlAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(uxmlPath.Replace(Application.dataPath, "Assets"));
+                        var ussAsset = AssetDatabase.LoadAssetAtPath<StyleSheet>(ussPath.Replace(Application.dataPath, "Assets"));
+                        
+                        // Configurar o UIDocument
+                        if (uxmlAsset != null)
+                        {
+                            uiDocument.visualTreeAsset = uxmlAsset;
+                        }
+                        
+                        if (ussAsset != null)
+                        {
+                            uiDocument.rootVisualElement.styleSheets.Add(ussAsset);
+                        }
+                        
+                        // Adicionar o script controller
+                        var controllerType = GetTypeByName(fileName + "Controller");
+                        if (controllerType != null)
+                        {
+                            Undo.AddComponent(uiGameObject, controllerType);
+                        }
+                        
+                        EditorUtility.SetDirty(uiGameObject);
+                        Debug.Log($"Created new UIDocument GameObject: {uiGameObject.name}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error creating UIDocument: {ex.Message}");
+                    }
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Error attaching to UIDocument: {ex.Message}");
+        }
+    }
+
+    private Type GetTypeByName(string className)
+    {
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var type = assembly.GetType(className);
+            if (type != null)
+                return type;
+        }
+        return null;
     }
 }
