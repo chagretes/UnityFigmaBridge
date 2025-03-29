@@ -528,7 +528,6 @@ namespace UnityFigmaBridge.Editor
 
                 if (screenController.TransitionEffect == null)
                 {
-                    return; // remove after, during local development I dont care about TransitionEffect
                     // Instantiate and apply the default transition effect (loaded from package assets folder)
                     var defaultTransitionAnimationEffect = AssetDatabase.LoadAssetAtPath("Packages/com.simonoliver.unityfigma/UnityFigmaBridge/Assets/TransitionFadeToBlack.prefab", typeof(GameObject)) as GameObject;
                     var transitionObject = (GameObject) PrefabUtility.InstantiatePrefab(defaultTransitionAnimationEffect,
