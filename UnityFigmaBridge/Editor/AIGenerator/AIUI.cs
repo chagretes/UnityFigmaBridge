@@ -262,6 +262,42 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
             
             if (!string.IsNullOrEmpty(uxmlContent))
             {
+                // Adicionar referência ao arquivo USS se não existir
+                string styleReference = $"<Style src=\"{fileName}Styles.uss\" />";
+                if (!uxmlContent.Contains("<Style src=") && !uxmlContent.Contains("<style src="))
+                {
+                    // Encontrar a tag ui:UXML
+                    int uiUxmlIndex = uxmlContent.IndexOf("<ui:UXML");
+                    if (uiUxmlIndex > -1)
+                    {
+                        int uiUxmlEndIndex = uxmlContent.IndexOf(">", uiUxmlIndex);
+                        if (uiUxmlEndIndex > -1)
+                        {
+                            // Inserir a referência ao estilo como primeiro elemento dentro da tag ui:UXML
+                            uxmlContent = uxmlContent.Insert(uiUxmlEndIndex + 1, "\n    " + styleReference);
+                        }
+                    }
+                    else
+                    {
+                        // Tentar com <UXML> sem prefixo ui:
+                        int uxmlIndex = uxmlContent.IndexOf("<UXML");
+                        if (uxmlIndex > -1)
+                        {
+                            int uxmlEndIndex = uxmlContent.IndexOf(">", uxmlIndex);
+                            if (uxmlEndIndex > -1)
+                            {
+                                // Inserir a referência ao estilo como primeiro elemento dentro da tag UXML
+                                uxmlContent = uxmlContent.Insert(uxmlEndIndex + 1, "\n    " + styleReference);
+                            }
+                        }
+                        else
+                        {
+                            // Se não encontrar nenhuma tag UXML, apenas adicionar ao início
+                            uxmlContent = styleReference + "\n" + uxmlContent;
+                        }
+                    }
+                }
+                
                 uxmlFilePath = Path.Combine(resourcesPath, fileName + "Layout.uxml");
                 File.WriteAllText(uxmlFilePath, uxmlContent);
             }
@@ -380,14 +416,6 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
                 {
                     Undo.RecordObject(uiDocument, "Update UIDocument source");
                     uiDocument.visualTreeAsset = uxmlAsset;
-                    EditorUtility.SetDirty(uiDocument);
-                }
-                
-                // Adicionar o StyleSheet se não estiver já presente
-                if (ussAsset != null)
-                {
-                    Undo.RecordObject(uiDocument, "Add StyleSheet to UIDocument");
-                    uiDocument.rootVisualElement.styleSheets.Add(ussAsset);
                     EditorUtility.SetDirty(uiDocument);
                 }
                 
