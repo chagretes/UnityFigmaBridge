@@ -11,6 +11,7 @@ using Amazon.Runtime;
 using Newtonsoft.Json;
 using UnityEngine.UIElements;
 using System.Collections.Generic;
+using UnityFigmaBridge.Editor.AIGenerator;
 
 public class BedrockUIGenerator : EditorWindow
 {
@@ -154,9 +155,7 @@ public class BedrockUIGenerator : EditorWindow
         
         try
         {
-            var credentials = new BasicAWSCredentials(_awsAccessKey, _awsSecretKey);
-            var regionEndpoint = RegionEndpoint.GetBySystemName(_awsRegion);
-            var client = new AmazonBedrockRuntimeClient(credentials, regionEndpoint);
+            var bedrockService = new BedrockService(_awsAccessKey, _awsSecretKey, _awsRegion, _modelId);
             
             string promptText = $@"
 <instructions>
@@ -188,31 +187,8 @@ Certifique-se de que os elementos e estilos estejam bem estruturados e utilizem 
 </example>
 ";
 
-            // Criar a requisição usando a API Converse
-            var request = new ConverseRequest
-            {
-                ModelId = _modelId,
-                Messages = new List<Message>
-                {
-                    new Message
-                    {
-                        Role = ConversationRole.User,
-                        Content = new List<ContentBlock> { new ContentBlock { Text = promptText } }
-                    }
-                },
-                InferenceConfig = new InferenceConfiguration
-                {
-                    MaxTokens = 5000,
-                    Temperature = 0.7F,
-                    TopP = 0.9F
-                }
-            };
-            
-            // Enviar a requisição e aguardar a resposta
-            var response = await client.ConverseAsync(request);
-            
-            // Extrair o texto da resposta
-            _generatedCode = response?.Output?.Message?.Content?[0]?.Text ?? "Nenhuma resposta recebida.";
+            // Chamar o serviço para gerar o conteúdo
+            _generatedCode = await bedrockService.GenerateContent(promptText);
             
             // Salvar automaticamente se a opção estiver ativada
             if (_autoSave && !string.IsNullOrEmpty(_generatedCode))
